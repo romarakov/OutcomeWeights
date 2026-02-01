@@ -2,25 +2,39 @@
 #' 
 #' @description Computes the smoother matrix \eqn{S} for a single decision tree.
 #'
-#' @param current_tree_indices_train Numeric vector. Leaf indices for the training data.
-#' @param current_tree_indices_test Numeric vector. Leaf indices for the test data.
-#' @param lambda Numeric. The L2 regularization parameter.
+#' @param train_leaf_ids_tree Numeric vector. Leaf indices for the training data in the tree.
+#' @param test_leaf_ids_tree Numeric vector. Leaf indices for the test data in the tree.
+#' @param lambda Numeric. The L2 regularization term (lambda) used in the XGBoost model.
 #'
 #' @return A list containing:
 #' \itemize{
 #'   \item \code{S_train}: The smoother matrix for the training set (n_train x n_train).
 #'   \item \code{S_test}: The smoother matrix for the test set (n_test x n_train).
 #' }
-#' 
 #' @keywords internal
-create_S_from_tree <- function(current_tree_indices_train,
-                               current_tree_indices_test,
+#' 
+create_S_from_tree <- function(train_leaf_ids_tree,
+                               test_leaf_ids_tree,
                                lambda) {
-  S_train <- outer(current_tree_indices_train, current_tree_indices_train, FUN = "==")
-  S_train <- S_train / (rowSums(S_train) + lambda)
+  n_train <- length(train_leaf_ids_tree)
+  n_test <- length(test_leaf_ids_tree)
   
-  S_test <- outer(current_tree_indices_test, current_tree_indices_train, FUN = "==")
-  S_test <- S_test / (rowSums(S_test) + lambda)
+  S_train <- matrix(0, nrow = n_train, ncol = n_train)
+  S_test <- matrix(0, nrow = n_test, ncol = n_train)
+  
+  leaf_counts <- table(train_leaf_ids_tree)
+  unique_leaves <- as.numeric(names(leaf_counts))
+  
+  for (leaf in unique_leaves) {
+    count <- as.numeric(leaf_counts[as.character(leaf)])
+    val <- 1 / (count + lambda)
+    
+    train_idx <- which(train_leaf_ids_tree == leaf)
+    test_idx <- which(test_leaf_ids_tree == leaf)
+    
+    S_train[train_idx, train_idx] <- val
+    S_test[test_idx, train_idx] <- val
+  }
   
   return(list(S_train = S_train, S_test = S_test))
 }
@@ -29,12 +43,12 @@ create_S_from_tree <- function(current_tree_indices_train,
 #' Create Smoother Matrix for a Single Boosted Tree
 #' 
 #' @description Computes the smoother matrix contributions for a specific boosted tree step,
-#' applying corrections based on the previous ensemble state (\code{S_gb_prev}).
+#' applying corrections based on the previous ensemble state (\code{prev_S_train}).
 #'
-#' @param current_tree_indices_train Numeric vector. Leaf indices for the training data.
-#' @param current_tree_indices_test Numeric vector. Leaf indices for the test data.
-#' @param S_gb_prev Matrix or NULL. The accumulated smoother matrix from previous trees.
-#'                  If NULL, this is treated as the first tree.
+#' @param train_leaf_ids_tree Numeric vector. Leaf indices for the training data in the tree.
+#' @param test_leaf_ids_tree Numeric vector. Leaf indices for the test data in the tree.
+#' @param prev_S_train Matrix or NULL. The accumulated smoother matrix from previous trees.
+#'                     If NULL, this is treated as the first tree.
 #' @param lambda Numeric. The L2 regularization parameter.
 #'
 #' @return A list containing:
@@ -43,42 +57,34 @@ create_S_from_tree <- function(current_tree_indices_train,
 #'   \item \code{S_test}: The smoother matrix for the test set (n_test x n_train).
 #' }
 #' @keywords internal
-create_S_from_single_boosted_tree <- function(current_tree_indices_train,
-                                              current_tree_indices_test,
-                                              S_gb_prev,
+#' 
+create_S_from_single_boosted_tree <- function(train_leaf_ids_tree,
+                                              test_leaf_ids_tree,
+                                              prev_S_train,
                                               lambda) {
-  S <- create_S_from_tree(current_tree_indices_train, current_tree_indices_test, lambda)
+  S <- create_S_from_tree(
+    train_leaf_ids_tree, test_leaf_ids_tree, lambda
+  )
   
-  if (is.null(S_gb_prev)) {
+  if (is.null(prev_S_train)) {
     # first tree: just normal tree
-    return(list(S_train = S$S_train, S_test = S$S_test))
+    return(S)
   }
   
-  n_train <- length(current_tree_indices_train)
-  n_test <- length(current_tree_indices_test)
+  leaf_sums <- rowsum(prev_S_train, group = train_leaf_ids_tree)
+  leaf_counts <- as.numeric(table(train_leaf_ids_tree))
+  leaf_corrections <- leaf_sums / (leaf_counts + lambda)
   
-  all_nodes <- unique(current_tree_indices_train)
-  n_nodes <- length(all_nodes)
+  unique_nodes <- as.numeric(rownames(leaf_sums))
   
-  node_corrections <- matrix(0, nrow = n_nodes, ncol = n_train)
-  S_train_correction <- matrix(0, nrow = n_train, ncol = n_train)
-  S_test_correction <- matrix(0, nrow = n_test, ncol = n_train)
+  train_map <- match(train_leaf_ids_tree, unique_nodes)
+  test_map  <- match(test_leaf_ids_tree, unique_nodes)
   
-  for (i in 1:length(all_nodes)) {
-    n <- all_nodes[i]
-    
-    # Create correction matrix
-    leaf_id_train <- current_tree_indices_train == n
-    node_corrections[i, ] <- colSums(S_gb_prev[leaf_id_train, , drop = FALSE]) / (sum(leaf_id_train) + lambda)
-    
-    S_train_correction[leaf_id_train, ] <- matrix(rep(node_corrections[i, ], sum(leaf_id_train)), nrow = sum(leaf_id_train), byrow = TRUE)
-    
-    leaf_id_test <- current_tree_indices_test == n
-    S_test_correction[leaf_id_test, ] <- matrix(rep(node_corrections[i, ], sum(leaf_id_test)), nrow = sum(leaf_id_test), byrow = TRUE)
-  }
+  S_train_correction <- leaf_corrections[train_map, , drop = FALSE]
+  S_test_correction  <- leaf_corrections[test_map, , drop = FALSE]
   
   S_train <- S$S_train - S_train_correction
-  S_test <- S$S_test - S_test_correction
+  S_test  <- S$S_test  - S_test_correction
   
   return(list(S_train = S_train, S_test = S_test))
 }
@@ -93,8 +99,6 @@ create_S_from_single_boosted_tree <- function(current_tree_indices_train,
 #' @param leaf_indices_train Matrix. Leaf indices for the training data (rows=samples, cols=trees).
 #' @param leaf_indices_test Matrix. Leaf indices for the test data.
 #' @param base_score Numeric or character. The model’s initial prediction (0 or "mean").
-#' @param output_dir Character. Directory path to save intermediate RDS files.
-#' @param save_output Logical. If TRUE, saves intermediate matrices to disk.
 #'
 #' @return A list containing:
 #' \itemize{
@@ -102,19 +106,11 @@ create_S_from_single_boosted_tree <- function(current_tree_indices_train,
 #'   \item \code{S_test}: The smoother matrix for the test set (n_test x n_train).
 #' }
 #' @keywords internal
+#' 
 create_S_from_gbtregressor <- function(model,
                                        leaf_indices_train,
                                        leaf_indices_test,
-                                       base_score,
-                                       save_output,
-                                       output_dir) {
-  if (save_output) {
-    # Check if the directory exists, and create it if it doesn't
-    if (!file.exists(output_dir)) {
-      dir.create(output_dir, recursive = TRUE)
-    }
-  }
-  
+                                       base_score) {
   n_train <- nrow(leaf_indices_train)
   n_test <- nrow(leaf_indices_test)
   
@@ -162,22 +158,7 @@ create_S_from_gbtregressor <- function(model,
     
     S_train_curr <- S_train_curr + eta * S$S_train
     S_test_curr <- S_test_curr + eta * S$S_test
-    
-    if (save_output) {
-      # Save the current matrix to an RDS file
-      output_filename_train <- paste(output_dir, "/S_curr_iteration_train_", col, ".rds", sep = "")
-      output_filename_test <- paste(output_dir, "/S_curr_iteration_test_", col, ".rds", sep = "")
-      
-      saveRDS(S_train_curr, file = output_filename_train)
-      saveRDS(S_test_curr, file = output_filename_test)
-      
-      # Save the current tree matrix
-      output_filename_train <- paste(output_dir, "/S_iteration_train_", col, ".rds", sep = "")
-      output_filename_test <- paste(output_dir, "/S_iteration_test_", col, ".rds", sep = "")
-      
-      saveRDS(S_train_curr, file = output_filename_train)
-      saveRDS(S_test_curr, file = output_filename_test)
-    }
+
   }
   
   return(list(S_train = S_train_curr, S_test = S_test_curr))
@@ -193,8 +174,6 @@ create_S_from_gbtregressor <- function(model,
 #' @param model An object of class \code{xgb.Booster}. The trained model.
 #' @param dtrain An \code{xgb.DMatrix} object. The training data used to build the model.
 #' @param dtest An \code{xgb.DMatrix} object. The test data.
-#' @param save_output Logical. Whether to save intermediate matrices to disk. Defaults to FALSE.
-#' @param output_dir Character. Directory for saving outputs if \code{save_output} is TRUE.
 #'
 #' @return A list containing:
 #' \itemize{
@@ -205,9 +184,7 @@ create_S_from_gbtregressor <- function(model,
 #' 
 get_xgboost_weights <- function(model,
                                 dtrain,
-                                dtest,
-                                save_output = FALSE,
-                                output_dir = NULL) {
+                                dtest) {
   params <- attr(model, "params")
   
   label_mean <- mean(xgboost::getinfo(dtrain, "label"))
@@ -227,7 +204,7 @@ get_xgboost_weights <- function(model,
   leaf_indices_test <- predict(model, dtest, predleaf = TRUE)
   
   smoothers <- create_S_from_gbtregressor(
-    model, leaf_indices_train, leaf_indices_test, base_score, save_output, output_dir
+    model, leaf_indices_train, leaf_indices_test, base_score
   )
   
   return(list(S_train = smoothers$S_train, S_test = smoothers$S_test))

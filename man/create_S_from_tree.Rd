@@ -4,18 +4,14 @@
 \alias{create_S_from_tree}
 \title{Compute Smoother Matrix for a Single Tree}
 \usage{
-create_S_from_tree(
-  current_tree_indices_train,
-  current_tree_indices_test,
-  lambda
-)
+create_S_from_tree(train_leaf_ids_tree, test_leaf_ids_tree, lambda)
 }
 \arguments{
-\item{current_tree_indices_train}{Numeric vector. Leaf indices for the training data.}
+\item{train_leaf_ids_tree}{Numeric vector. Leaf indices for the training data in the tree.}
 
-\item{current_tree_indices_test}{Numeric vector. Leaf indices for the test data.}
+\item{test_leaf_ids_tree}{Numeric vector. Leaf indices for the test data in the tree.}
 
-\item{lambda}{Numeric. The L2 regularization parameter.}
+\item{lambda}{Numeric. The L2 regularization term (lambda) used in the XGBoost model.}
 }
 \value{
 A list containing:

@@ -8,9 +8,7 @@ create_S_from_gbtregressor(
   model,
   leaf_indices_train,
   leaf_indices_test,
-  base_score,
-  save_output,
-  output_dir
+  base_score
 )
 }
 \arguments{
@@ -21,10 +19,6 @@ create_S_from_gbtregressor(
 \item{leaf_indices_test}{Matrix. Leaf indices for the test data.}
 
 \item{base_score}{Numeric or character. The model’s initial prediction (0 or "mean").}
-
-\item{save_output}{Logical. If TRUE, saves intermediate matrices to disk.}
-
-\item{output_dir}{Character. Directory path to save intermediate RDS files.}
 }
 \value{
 A list containing:

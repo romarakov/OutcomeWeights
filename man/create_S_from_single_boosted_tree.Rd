@@ -5,18 +5,18 @@
 \title{Create Smoother Matrix for a Single Boosted Tree}
 \usage{
 create_S_from_single_boosted_tree(
-  current_tree_indices_train,
-  current_tree_indices_test,
-  S_gb_prev,
+  train_leaf_ids_tree,
+  test_leaf_ids_tree,
+  prev_S_train,
   lambda
 )
 }
 \arguments{
-\item{current_tree_indices_train}{Numeric vector. Leaf indices for the training data.}
+\item{train_leaf_ids_tree}{Numeric vector. Leaf indices for the training data in the tree.}
 
-\item{current_tree_indices_test}{Numeric vector. Leaf indices for the test data.}
+\item{test_leaf_ids_tree}{Numeric vector. Leaf indices for the test data in the tree.}
 
-\item{S_gb_prev}{Matrix or NULL. The accumulated smoother matrix from previous trees.
+\item{prev_S_train}{Matrix or NULL. The accumulated smoother matrix from previous trees.
 If NULL, this is treated as the first tree.}
 
 \item{lambda}{Numeric. The L2 regularization parameter.}
@@ -30,6 +30,6 @@ A list containing:
 }
 \description{
 Computes the smoother matrix contributions for a specific boosted tree step,
-applying corrections based on the previous ensemble state (\code{S_gb_prev}).
+applying corrections based on the previous ensemble state (\code{prev_S_train}).
 }
 \keyword{internal}

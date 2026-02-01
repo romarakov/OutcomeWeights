@@ -4,13 +4,7 @@
 \alias{get_xgboost_weights}
 \title{Extract XGBoost Smoother Weights}
 \usage{
-get_xgboost_weights(
-  model,
-  dtrain,
-  dtest,
-  save_output = FALSE,
-  output_dir = NULL
-)
+get_xgboost_weights(model, dtrain, dtest)
 }
 \arguments{
 \item{model}{An object of class \code{xgb.Booster}. The trained model.}
@@ -18,10 +12,6 @@ get_xgboost_weights(
 \item{dtrain}{An \code{xgb.DMatrix} object. The training data used to build the model.}
 
 \item{dtest}{An \code{xgb.DMatrix} object. The test data.}
-
-\item{save_output}{Logical. Whether to save intermediate matrices to disk. Defaults to FALSE.}
-
-\item{output_dir}{Character. Directory for saving outputs if \code{save_output} is TRUE.}
 }
 \value{
 A list containing:
